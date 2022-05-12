@@ -1,5 +1,9 @@
 library(shiny)
+library(ggplot2)
+library(dplyr)
 library(shinydashboard)
+library(stringr)
+library(purrr)
 library(shinyWidgets)
 library(tidytable)
 library(leaflet)
@@ -23,15 +27,18 @@ body <- dashboardBody(
   fluidRow(
     column(8,
            tabBox(
+             id = "display",
              width = 12,
              height = "400px",
              tabPanel("Map",
                leafletOutput("map")
              ),
-             tabPanel("org")
+             tabPanel("History",
+                      plotOutput("history"))
            )),
     column(4,
            tabBox(
+             id = "selection",
              width = 12,
              tabPanel("Commodity",
                       multiInput(
@@ -62,8 +69,10 @@ body <- dashboardBody(
                          value = 2020,
                          animate = TRUE,
                          sep = "",
-                         width = "410px"))
-           ), 
+                         width = "410px")),
+           fluidRow(
+             verbatimTextOutput("text"))
+           ) 
 
   )
 )
@@ -83,65 +92,81 @@ server <- function(input, output, session) {
     mapData(data = joined, 
             countries = input$countries, 
             commodities = input$commodities, 
-            years  = paste0("Y",input$year))
+            years  = paste0("Y",input$year)) |> 
+      drop_na.()
     )
     
   output$map <- renderLeaflet({
+    
+    #Only draw if map tab is in focus
+    if(input$display == "Map") {
+    
     m <- leaflet(data= markers()) |> addTiles()
     
     if(length(input$countries) < 20 | length(input$commodities) < 20) {
       m |> addCircleMarkers(markers() |>
                               unique(), 
-                            lng = ~ X, lat = ~ Y, 
-                            radius = ~ (markers()[[paste0("Y", input$year)]] * 0.0001))
+                            lng = ~ X, lat = ~ Y,
+                            #scale each circle marker in a range of 1-20
+                            radius = ~ 1:10,
+                            color = "#a52a2a",
+                            stroke = FALSE, 
+                            fillOpacity = 0.6)
     } else { m }
-  })
-  
+    }
+  }) |> bindCache(input$commodities, input$countries)
+
   #observe input$commodities is not null, update input when value selected
   observe({
     
-    area <- countries[
+    area <- isolate(countries[
       countries %in%  
         mapData(data = joined, commodities = input$commodities, years  = paste0("Y",input$year))$Area
-      ]
+      ])
     
     if(!is.null(input$commodities)) {
       updateMultiInput(session = session, 
                        inputId = "countries", 
-                       choices = area |> unique(),
+                       choices = area,
                        selected = input$countries)
                        
     } 
     
   #observe input$commodities is not null, update input when value selected  
-  }) |> bindEvent(input$commodities)
+  }) |> bindEvent(input$countries)
   
   observe({
     
-    item <- commodities[commodities %in% markers()$Item]
+    item <- isolate(commodities[
+      commodities %in%  
+        mapData(data = joined, countries = input$countries, years  = paste0("Y",input$year))$Item
+    ]) 
     
     if(!is.null(input$countries)) {
       updateMultiInput(session = session, 
-                       inputId = "commoditites", 
-                       choices = item |> unique(),
+                       inputId = "commodities", 
+                       choices = item,
                        selected = input$commodities)
       
     } 
     
-  }) |> bindEvent(input$countries)
+  }) |> bindEvent(input$commodities)
+  
+
+  output$history <- renderPlot(
+    
+    #Only draw if history tab is in focus
+    if(input$display == "History") {
+    linePlot(markers())
+    }
+  ) |> bindCache(input$commodities, input$countries)
   
   output$text <- renderPrint({
+     
     markers()
-  })
-
+  }) 
 }
 
 shinyApp(ui, server)
-
-
-
-bench::mark(vroom::vroom("agricultural_commodities.csv"),
-            read_csv("agricultural_commodities.csv"),
-            data.table::fread("agricultural_commodities.csv"))
 
 
