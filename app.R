@@ -92,24 +92,23 @@ server <- function(input, output, session) {
     mapData(data = joined, 
             countries = input$countries, 
             commodities = input$commodities, 
-            years  = paste0("Y",input$year)) |> 
-      drop_na.()
+            years  = paste0("Y",input$year))
     )
     
   output$map <- renderLeaflet({
     
+    data <- markers() |> drop_na.()
+    
     #Only draw if map tab is in focus
     if(input$display == "Map") {
     
-    m <- leaflet(data= markers()) |> addTiles()
+    m <- leaflet(data= data) |> addTiles()
     
     if(length(input$countries) < 20 | length(input$commodities) < 20) {
-      m |> addCircleMarkers(markers() |>
+      m |> addCircleMarkers(data |> 
                               unique(), 
+                            radius = ~ (data[[paste0("Y", input$years)]] / max(data[[paste0("Y", input$years)]])) * 10,
                             lng = ~ X, lat = ~ Y,
-                            #scale each circle marker in a range of 1-20
-                            radius = ~ 1:10,
-                            color = "#a52a2a",
                             stroke = FALSE, 
                             fillOpacity = 0.6)
     } else { m }
@@ -163,10 +162,8 @@ server <- function(input, output, session) {
   
   output$text <- renderPrint({
      
-    markers()
+    markers() |> drop_na.()
   }) 
 }
 
 shinyApp(ui, server)
-
-
