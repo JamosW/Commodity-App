@@ -2,17 +2,6 @@ library(sf)
 library(fuzzyjoin)
 
 
-cleaned <- function(x) {
-  item <- str_replace(joined$Item,c("\xe9","C\xf4"), c("e", "Co"))
-  area <- str_replace(joined$Area,c("\xe9","C\xf4"), c("e", "Co"))
-  
-  l <- list(item, area) |> purrr::set_names(c("item", "area"))
-  
-  return(l)
-}
-
-cleaned()
-
 
 #take geometry from world sf object, get the X and Y Coordinates and append the columns
 worldXY <- rnaturalearthdata::countries50 |>
@@ -28,6 +17,21 @@ worldXY <- rnaturalearthdata::countries50 |>
 joined <- vroom::vroom("agricultural_commodities.csv") |> 
   fuzzy_left_join(worldXY , match_fun = list(str_detect), by = c("Area" = "name")) |> 
   filter.(Element %in% c("Area harvested", "Yield", "Production"))
+
+cleaned <- function(x) {
+  item <- str_replace(joined$Item,c("\xe9","C\xf4"), c("e", "Co"))
+  area <- str_replace(joined$Area,c("\xe9","C\xf4"), c("e", "Co"))
+  
+  l <- list(item, area) |> purrr::set_names(c("item", "area"))
+  
+  return(l)
+}
+
+cleaned()
+
+
+
+
 
 
 mainplot <- function(data = joined, type = "Area harvested") {
@@ -47,10 +51,10 @@ mapData <- function(data, countries = NULL, commodities = NULL, years = NULL){
   ndata$Item <- cleaned()$item
   ndata$Area <- cleaned()$area
 
-  if(is.null(commodities) & !is.null(countries)) {
+  if(is.null(commodities) && !is.null(countries)) {
     ndata <- ndata |>
       filter.(Area %in% countries, Element == "Area harvested", Item %in% Item)
-  } else if (is.null(countries) & !is.null(commodities)) {
+  } else if (is.null(countries) && !is.null(commodities)) {
     ndata <- ndata |> 
       filter.(Area %in% Area, Item %in% commodities, Element == "Area harvested")
   } else {
@@ -67,7 +71,7 @@ mapData <- function(data, countries = NULL, commodities = NULL, years = NULL){
 ##################################################Line Plot Data ##########################################################
 
 
-linePlot <- function(data) {
+linePlot <- function(data, year = 2020) {
   
   #lineplot
   lp <- function(x, group, clr) 
@@ -82,7 +86,7 @@ linePlot <- function(data) {
   #only pivot columns that are years
   pivot <- function(x)
   {
-    select.(x, Area, Item, Element, contains("Y")) |>  
+    select.(x, Area, Item, Element, paste0("Y",1961:year)) |>  
       pivot_longer.(contains("Y")) |> 
       filter.(value != "A") |> 
       mutate.(value = as.numeric(value), name = str_remove(name, c("Y")) |> as.numeric())
@@ -120,17 +124,17 @@ linePlot <- function(data) {
       pivot() %>% 
       lp(.$Area, data$Area)
     #only when on area is selected and less than 10 items, more than 10 is too much clutter
-  } else if( between.((data$Item |> unique() |> length()), 1,12) & between.((data$Area |> unique() |> length()), 2, 12)){
+  } else if( between.((data$Item |> unique() |> length()), 1,12) && between.((data$Area |> unique() |> length()), 1, 12)){
     p <- joined |> 
       filter.(Area %in% data$Area, Element == "Area harvested", Item %in% data$Item) |>
       pivot() %>% 
       lp(.$Item, "Commodity") + facet_wrap(vars(Area))
-  } else if((data$Item |> unique() |> length()) > 10 & (data$Area |> unique() |> length()) <= 12){
+  } else if((data$Item |> unique() |> length()) > 12 && (data$Area |> unique() |> length()) <= 12){
     p <- joined |> 
       filter.(Area %in% data$Area, Element == "Area harvested", Item %in% data$Item) |>
       pivot() %>% 
       lp(.$Area, "Country") + facet_wrap(vars(Area))
-  } else if( between.((data$Item |> unique() |> length()), 1,12) & (data$Area |> unique() |> length()) > 12 ){
+  } else if( between.((data$Item |> unique() |> length()), 1,12) && (data$Area |> unique() |> length()) > 12 ){
     p <- joined |> 
       filter.(Area %in% data$Area, Element == "Area harvested", Item %in% data$Item) |>
       pivot() %>% 
@@ -144,14 +148,35 @@ linePlot <- function(data) {
 library(treemapify)
 #library(ggplot2)
 
-p <- ggplot(G20, aes(area = gdp_mil_usd, fill = region)) +
-  geom_treemap()
+dat <- mapData(data = joined, commodities = c("Oranges", "Apples", "Grapes", "Apricots", "Yams", "Cashew Apple") , years  = paste0("Y",2020))
 
-p
 
-(dat <- mapData(joined, commodities = "Apricots", years = paste0("Y", 2020)))
 
-ggplot(data = dat, aes(area = Y2020, fill = Area)) + 
-  geom_treemap(show.legend = FALSE, na.rm = TRUE, start = "topleft") +
-  scale_fill_brewer(palette = "YlOrRd")
+treemp <-function(df, year, byCountry = NULL) {
+  
+  df <- df |> drop_na.()
+  
+  #base treemap, adjusted based on codition
+  basemap <- function(df, year, label, lyout = "squarified") 
+    {
+    ggplot(data = df, aes(area = df[[paste0("Y",year)]], fill = Area, label = df[[label]], subgroup = Area)) + 
+      geom_treemap(na.rm = TRUE, start = "topleft", layout = lyout) +
+      scale_fill_hue(c = 80, h = c(0,285)) + 
+      geom_treemap_text(place = "top", start = "topleft", layout = lyout) +
+      geom_treemap_subgroup_text(place = "centre",alpha = 0.4, start = "topleft", layout = lyout) +
+      theme(legend.position = "none")
+    }
+
+  
+  if(length(df$Area |> unique()) == 1) {
+    bm <- basemap(df, year, "Item")
+  } else if (length(df$Area |> unique()) > 1 && byCountry){
+    bm <- basemap(df, year, label = "Item", lyout = "fixed")
+  } else {
+    bm <- basemap(df, year, label = "Item")
+  }
+
+  return(bm)
+}
+
 
