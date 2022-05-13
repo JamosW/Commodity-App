@@ -7,7 +7,6 @@ library(purrr)
 library(shinyWidgets)
 library(tidytable)
 library(leaflet)
-
 source("agri_data.R")
 
 countries <- joined |> 
@@ -32,9 +31,17 @@ body <- dashboardBody(
              height = "400px",
              tabPanel("Map",
                leafletOutput("map")
-             ),
+               ),
              tabPanel("History",
-                      plotOutput("history"))
+                      plotOutput("history")
+                      ),
+             tabPanel("Treemap",
+                      plotOutput("treemap"),
+                      switchInput(
+                        inputId = "switchCountry",
+                        size = "mini",
+                        label = "By country:"
+                      ))
            )),
     column(4,
            tabBox(
@@ -45,8 +52,8 @@ body <- dashboardBody(
                         inputId = "commodities",
                         label = "Commodities :", 
                         choices = NULL,
-                        choiceNames = map(seq_along(commodities), 
-                                          function(x) commodities[x]),
+                        choiceNames = map_chr.(seq_along(commodities), 
+                                          function(x) commodities[x]) |> sort(),
                         choiceValues = commodities,
                         width = "100%"
                       )),
@@ -55,8 +62,8 @@ body <- dashboardBody(
                         inputId = "countries",
                         label = "Countries :", 
                         choices = NULL,
-                        choiceNames = map(seq_along(countries), 
-                                             function(x) countries[x]),
+                        choiceNames = map_chr.(seq_along(countries), 
+                                               function(x) countries[x]) |> sort(),
                         choiceValues = countries, 
                         width = "100%"
                       )),
@@ -118,51 +125,74 @@ server <- function(input, output, session) {
   #observe input$commodities is not null, update input when value selected
   observe({
     
-    area <- isolate(countries[
-      countries %in%  
-        mapData(data = joined, commodities = input$commodities, years  = paste0("Y",input$year))$Area
-      ])
+    all_areas <- cleaned()$area |> unique()  |> sort()
     
-    if(!is.null(input$commodities)) {
+    available_areas <- mapData(data = joined, commodities = input$commodities, years  = paste0("Y",input$year)) |> 
+      drop_na.()
+    
+    selected_areas <- countries[countries %in% (available_areas)$Area]
+    
+    isolate(if(!is.null(input$commodities)) {
       updateMultiInput(session = session, 
                        inputId = "countries", 
-                       choices = area,
+                       choices = selected_areas |>  sort(),
                        selected = input$countries)
                        
-    } 
+    } else {
+      updateMultiInput(session = session, 
+                       inputId = "countries", 
+                       choices = all_areas,
+                       selected = input$countries)
+    })
     
   #observe input$commodities is not null, update input when value selected  
-  }) |> bindEvent(input$countries)
+  })
   
   observe({
     
-    item <- isolate(commodities[
-      commodities %in%  
-        mapData(data = joined, countries = input$countries, years  = paste0("Y",input$year))$Item
-    ]) 
+    all_items <- cleaned()$item |> unique() |> sort()
     
-    if(!is.null(input$countries)) {
+    available_items <- mapData(data = joined, countries = input$countries, years  = paste0("Y",input$year)) |> 
+      drop_na.()
+    
+    selected_items <- commodities[commodities %in% (available_items)$Item] 
+    
+    isolate(if(!is.null(input$countries)) {
       updateMultiInput(session = session, 
                        inputId = "commodities", 
-                       choices = item,
+                       choices = selected_items |>  sort(),
                        selected = input$commodities)
       
-    } 
+    } else {
+      updateMultiInput(session = session, 
+                       inputId = "commodities", 
+                       choices = all_items,
+                       selected = input$commodities)
+    })
     
-  }) |> bindEvent(input$commodities)
+  })
   
 
   output$history <- renderPlot(
     
     #Only draw if history tab is in focus
     if(input$display == "History") {
-    linePlot(markers())
+    linePlot(markers(), year = input$year)
     }
-  ) |> bindCache(input$commodities, input$countries)
+  ) |> bindCache(input$commodities, input$countries, input$year)
+  
+  output$treemap <- renderPlot(
+    
+    #Only draw if Treemap tab is in focus
+    if(input$display == "Treemap") {
+      
+      treemp(markers(), year = input$year, by = input$switchCountry)
+    }
+  ) |> bindCache(input$commodities, input$countries, input$switchCountry, input$year)
   
   output$text <- renderPrint({
      
-    markers() |> drop_na.()
+    markers()
   }) 
 }
 
