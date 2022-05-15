@@ -3,8 +3,10 @@ library(fuzzyjoin)
 
 
 
-#take geometry from world sf object, get the X and Y Coordinates and append the columns
-worldXY <- rnaturalearthdata::countries50 |>
+load_and_join <- function(x){
+  
+  #take geometry from world sf object, get the X and Y Coordinates and append the columns
+  worldXY <- rnaturalearthdata::countries50 |>
   st_as_sf() |> 
   st_make_valid() |> 
   st_geometry() |>
@@ -14,9 +16,22 @@ worldXY <- rnaturalearthdata::countries50 |>
   data.frame(name = rnaturalearthdata::countries50$name) |> 
   purrr::set_names("X", "Y", "name")
 
+#join XY data to data frame that is used for mapping
 joined <- vroom::vroom("agricultural_commodities.csv") |> 
   fuzzy_left_join(worldXY , match_fun = list(str_detect), by = c("Area" = "name")) |> 
   filter.(Element %in% c("Area harvested", "Yield", "Production"))
+
+#find the rows that are unneeded
+unmatched <- joined |> filter.(is.na(X), !Area %in% c("Africa", "Asia", "Europe", "Americas", "Oceania"))
+
+joined <- joined |> filter.(!Area %in% unmatched$Area)
+
+return(joined)
+
+}
+
+joined <- load_and_join() |> filter.(Element %in% "Area harvested")
+
 
 cleaned <- function(x) {
   item <- str_replace(joined$Item,c("\xe9","C\xf4"), c("e", "Co"))
@@ -26,13 +41,6 @@ cleaned <- function(x) {
   
   return(l)
 }
-
-cleaned()
-
-
-
-
-
 
 mainplot <- function(data = joined, type = "Area harvested") {
     
@@ -148,11 +156,7 @@ linePlot <- function(data, year = 2020) {
 library(treemapify)
 #library(ggplot2)
 
-dat <- mapData(data = joined, commodities = c("Oranges", "Apples", "Grapes", "Apricots", "Yams", "Cashew Apple") , years  = paste0("Y",2020))
-
-
-
-treemp <-function(df, year, byCountry = NULL) {
+treemp <-function(df, year) {
   
   df <- df |> drop_na.()
   
@@ -161,22 +165,56 @@ treemp <-function(df, year, byCountry = NULL) {
     {
     ggplot(data = df, aes(area = df[[paste0("Y",year)]], fill = Area, label = df[[label]], subgroup = Area)) + 
       geom_treemap(na.rm = TRUE, start = "topleft", layout = lyout) +
-      scale_fill_hue(c = 80, h = c(0,285)) + 
-      geom_treemap_text(place = "top", start = "topleft", layout = lyout) +
-      geom_treemap_subgroup_text(place = "centre",alpha = 0.4, start = "topleft", layout = lyout) +
-      theme(legend.position = "none")
+      scale_fill_hue(c = 80, h = c(0,285)) +
+      geom_treemap_subgroup_text(place = "centre",alpha = 0.4, start = "topleft", layout = lyout)
     }
 
   
-  if(length(df$Area |> unique()) == 1) {
+  if(length(df$Item |> unique())  ==  1 && length(df$Area) |> unique() < 10) {
     bm <- basemap(df, year, "Item")
-  } else if (length(df$Area |> unique()) > 1 && byCountry){
-    bm <- basemap(df, year, label = "Item", lyout = "fixed")
+  } else if (length(df$Item |> unique())  >  1 && length(df$Area) |> unique() < 10) {
+    bm <- basemap(df, year, label = "Item")  + 
+      geom_treemap_text(place = "top", start = "topleft", layout = "squarified")
+  } else if (length(df$Item |> unique())  >  1 && length(df$Area) |> unique() > 10) {
+    bm <- basemap(df, year, "Item") +
+      theme(legend.position = "none")  + 
+      geom_treemap_text(place = "top", start = "topleft", layout = "squarified")
+  } else if (length(df$Item |> unique())  ==  1 && length(df$Area) |> unique() > 10) {
+    bm <- basemap(df, year, "Item") +
+      theme(legend.position = "none") 
   } else {
-    bm <- basemap(df, year, label = "Item")
+    bm <- basemap(df, year, "Item")
   }
 
   return(bm)
+}
+
+
+#------------------------------------------------------Time Series---------------------------------------------------------
+library(xts)
+#load data
+
+ts_data <- function(type, years = NULL) {
+  
+  #load raw external data
+  rawd <- vroom::vroom(paste0("https://query1.finance.yahoo.com/v7/finance/download/", type, "?period1=1305331200&period2=1652486400&interval=1d&events=history&includeAdjustedClose=true"))
+  
+  #convert to xts, order by date, remove the date
+  xts::xts(rawd[-1], order.by = rawd$Date) 
+}
+
+#commoditites
+commods <- list("Sugar" = "SB=F", "Cotton" = "CT=F", "Cocoa" = "CC=F", "Soybean" = "ZS=F", "Oat" = "ZO=F",
+                     "Corn" = "ZO=F", "Coffee" = "KC=F")
+s <- "Coffee, green"
+
+#takes the time series data and it's name to be plotted
+plot_ts <- function(tsData, name) {
+  
+  ggplot(data = tsData) + geom_line(aes(x = tsData |> index(), y = `Adj Close` )) +
+    labs(x = "Year",
+         y = "Adjusted Closing Price",
+         title = paste(name, "prices from 2010 to current date (USD)"))
 }
 
 
