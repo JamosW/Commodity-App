@@ -7,16 +7,15 @@ library(purrr)
 library(shinyWidgets)
 library(tidytable)
 library(leaflet)
+library(htmltools)
 source("agri_data.R")
 
 countries <- joined |> 
-  filter.(Element == "Area harvested") |> 
   pull.(Area) |> 
   str_replace(c("C\xf4", "\xe9"), c("Co", "e")) |> 
   unique()
 
 commodities <- joined |> 
-  filter.(Element == "Area harvested") |> 
   pull.(Item) |> 
   str_replace(c("C\xf4", "\xe9"), c("Co", "e")) |> 
   unique()
@@ -36,12 +35,7 @@ body <- dashboardBody(
                       plotOutput("history")
                       ),
              tabPanel("Treemap",
-                      plotOutput("treemap"),
-                      switchInput(
-                        inputId = "switchCountry",
-                        size = "mini",
-                        label = "By country:"
-                      ))
+                      plotOutput("treemap"))
            )),
     column(4,
            tabBox(
@@ -76,10 +70,25 @@ body <- dashboardBody(
                          value = 2020,
                          animate = TRUE,
                          sep = "",
-                         width = "410px")),
-           fluidRow(
-             verbatimTextOutput("text"))
-           ) 
+                         width = "410px"))
+
+    )),
+  fluidRow(
+    column(12,
+          box(id = "Financial",
+              width = 12,
+              height = "10%",
+              collapsed = TRUE,
+              collapsible = TRUE,
+              tabPanel("Time Series",
+                        plotOutput("ts",
+                                         
+                           )
+                           
+                  ))),
+    fluidRow(
+      verbatimTextOutput("text")
+    )
 
   )
 )
@@ -116,6 +125,8 @@ server <- function(input, output, session) {
                               unique(), 
                             radius = ~ (data[[paste0("Y", input$years)]] / max(data[[paste0("Y", input$years)]])) * 10,
                             lng = ~ X, lat = ~ Y,
+                            popup = ~ data |> pull.(Area),
+                            label = ~ htmlEscape(Area),
                             stroke = FALSE, 
                             fillOpacity = 0.6)
     } else { m }
@@ -127,7 +138,9 @@ server <- function(input, output, session) {
     
     all_areas <- cleaned()$area |> unique()  |> sort()
     
-    available_areas <- mapData(data = joined, commodities = input$commodities, years  = paste0("Y",input$year)) |> 
+    available_areas <- mapData(data = joined,
+                               commodities = input$commodities, 
+                               years  = paste0("Y",input$year)) |> 
       drop_na.()
     
     selected_areas <- countries[countries %in% (available_areas)$Area]
@@ -152,7 +165,8 @@ server <- function(input, output, session) {
     
     all_items <- cleaned()$item |> unique() |> sort()
     
-    available_items <- mapData(data = joined, countries = input$countries, years  = paste0("Y",input$year)) |> 
+    available_items <- mapData(data = joined,
+                               countries = input$countries, years  = paste0("Y",input$year)) |> 
       drop_na.()
     
     selected_items <- commodities[commodities %in% (available_items)$Item] 
@@ -186,13 +200,27 @@ server <- function(input, output, session) {
     #Only draw if Treemap tab is in focus
     if(input$display == "Treemap") {
       
-      treemp(markers(), year = input$year, by = input$switchCountry)
+      treemp(markers(), year = input$year)
     }
-  ) |> bindCache(input$commodities, input$countries, input$switchCountry, input$year)
+  ) |> bindCache(input$commodities, input$countries, input$year)
+  
+  
+  output$ts <- renderPlot(
+    
+    if(any(str_detect(input$commodities, names(commods)))) {
+      
+      
+      #s is the input value needed
+      plot_ts(
+        tsData = ts_data(type = commods[str_detect(input$commodities, names(commods))]),
+        name = names(commods)[str_detect(input$commodities, names(commods))]
+        )}
+
+  )
   
   output$text <- renderPrint({
-     
-    markers()
+    label = ~ htmlEscape(joined["Area"])
+    
   }) 
 }
 
