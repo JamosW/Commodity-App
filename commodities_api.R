@@ -1,5 +1,11 @@
 library(httr)
 library(jsonlite)
+library(Quandl)
+
+
+
+Quandl.api_key('yLaNJxwXSzNFSPQzvCmC')
+dat <- Quandl('MGEX/IWU2021')
 
 
 updateAPI <- function(key = NULL, commodities = NULL) {
