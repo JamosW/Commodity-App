@@ -1,24 +1,15 @@
 library(shiny)
 library(ggplot2)
-library(dplyr)
 library(shinydashboard)
-library(stringr)
-library(purrr)
 library(shinyWidgets)
-library(tidytable)
 library(leaflet)
 library(htmltools)
 source("agri_data.R")
 
-countries <- joined |> 
-  pull.(Area) |> 
-  str_replace(c("C\xf4", "\xe9"), c("Co", "e")) |> 
-  unique()
 
-commodities <- joined |> 
-  pull.(Item) |> 
-  str_replace(c("C\xf4", "\xe9"), c("Co", "e")) |> 
-  unique()
+countries <- funique(joined$Area)
+
+commodities <- funique(joined$Item)
 
 body <- dashboardBody(
   
@@ -46,8 +37,8 @@ body <- dashboardBody(
                         inputId = "commodities",
                         label = "Commodities :", 
                         choices = NULL,
-                        choiceNames = map_chr.(seq_along(commodities), 
-                                          function(x) commodities[x]) |> sort(),
+                        choiceNames = sapply(seq_along(commodities), 
+                                          function(x) commodities[x] |>  sort()),
                         choiceValues = commodities,
                         width = "100%"
                       )),
@@ -56,8 +47,8 @@ body <- dashboardBody(
                         inputId = "countries",
                         label = "Countries :", 
                         choices = NULL,
-                        choiceNames = map_chr.(seq_along(countries), 
-                                               function(x) countries[x]) |> sort(),
+                        choiceNames = sapply(seq_along(countries), 
+                                               function(x) countries[x] |> sort()),
                         choiceValues = countries, 
                         width = "100%"
                       )),
@@ -95,7 +86,7 @@ body <- dashboardBody(
 
 ui <- dashboardPage(
     dashboardHeader(
-      title = "Hello"
+      title = "Commodities"
     ),
     dashboardSidebar(),
     body
@@ -108,40 +99,63 @@ server <- function(input, output, session) {
     mapData(data = joined, 
             countries = input$countries, 
             commodities = input$commodities, 
-            years  = paste0("Y",input$year))
+            years  = paste0("Y",input$year)) |> 
+      na_omit()
     )
+  
+  
+  
     
   output$map <- renderLeaflet({
     
-    data <- markers() |> drop_na.()
+    pal <- colorBin(c("viridis"), markers()[[paste0("Y",input$year)]], bins = 5)
     
     #Only draw if map tab is in focus
     if(input$display == "Map") {
     
-    m <- leaflet(data= data) |> addTiles()
+    m <- leaflet(data= markers()) |>
+      addTiles(options = tileOptions(minZoom = 1, maxZoom = 5))
     
-    if(length(input$countries) < 20 | length(input$commodities) < 20) {
-      m |> addCircleMarkers(data |> 
-                              unique(), 
-                            radius = ~ (data[[paste0("Y", input$years)]] / max(data[[paste0("Y", input$years)]])) * 10,
-                            lng = ~ X, lat = ~ Y,
-                            popup = ~ data |> pull.(Area),
-                            label = ~ htmlEscape(Area),
-                            stroke = FALSE, 
-                            fillOpacity = 0.6)
+    leaf_extra <- function(m, tit, dat) {
+      #function for map, to reduce repitition
+      newM <- m |> addCircleMarkers(dat,
+                                 radius = 6,
+                                 lng = ~ X, lat = ~ Y,
+                                 label = ~ htmlEscape(Area),
+                                 color = ~ pal(dat[[paste0("Y",input$year)]]),
+                                 stroke = FALSE, 
+                                 fillOpacity = 0.6) |>
+        leaflet::addLegend(pal = pal,
+                           values = ~ dat[[paste0("Y",input$year)]],
+                           title = tit)
+      
+      return(newM)
+    }
+    
+    if(between.(length(input$countries),1, 20) || between.(length(input$commodities), 1,20)) {
+      
+      if(length(funique(markers()$Item)) == 1) {
+        m |> leaf_extra(tit = paste(funique(markers()$Item), "(ha)"), dat = markers())
+      } else {
+        m |> leaf_extra(tit = "Area Harvested (ha)", dat = markers())
+      }
+      
     } else { m }
     }
-  }) |> bindCache(input$commodities, input$countries)
+  }) |> bindCache(input$commodities, input$countries, input$year)
+  
 
   #observe input$commodities is not null, update input when value selected
   observe({
     
-    all_areas <- cleaned()$area |> unique()  |> sort()
+    years = input$year
+    
+    all_areas <- joined$area |> funique()  |> sort()
     
     available_areas <- mapData(data = joined,
                                commodities = input$commodities, 
-                               years  = paste0("Y",input$year)) |> 
-      drop_na.()
+                               years  = paste0("Y",years)) |> 
+      na_omit()
     
     selected_areas <- countries[countries %in% (available_areas)$Area]
     
@@ -163,11 +177,13 @@ server <- function(input, output, session) {
   
   observe({
     
-    all_items <- cleaned()$item |> unique() |> sort()
+    years = input$year
+    
+    all_items <- joined$item |> funique() |> sort()
     
     available_items <- mapData(data = joined,
-                               countries = input$countries, years  = paste0("Y",input$year)) |> 
-      drop_na.()
+                               countries = input$countries, years  = paste0("Y", years)) |> 
+      na_omit()
     
     selected_items <- commodities[commodities %in% (available_items)$Item] 
     
@@ -183,7 +199,7 @@ server <- function(input, output, session) {
                        choices = all_items,
                        selected = input$commodities)
     })
-    
+
   })
   
 
@@ -217,11 +233,8 @@ server <- function(input, output, session) {
         )}
 
   )
-  
-  output$text <- renderPrint({
-    label = ~ htmlEscape(joined["Area"])
-    
-  }) 
 }
 
+
 shinyApp(ui, server)
+
