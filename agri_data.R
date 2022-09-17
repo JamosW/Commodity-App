@@ -17,14 +17,14 @@ worldXY<-  countriesData |>
     matrix(ncol = 2, byrow = T) |>
     as.data.frame() |>
     setNames(c("X", "Y")) |>
-    cbind(name = countriesData$name)
+    cbind(name = countriesData$name, economy = countriesData$economy)
 
   joined <- joined |>
   fuzzyjoin::fuzzy_left_join(worldXY , match_fun = list(stringr::str_detect), by = c("Area" = "name")) %>%
     ss(.$Element %in% c("Area harvested") & 
          !.$Area %in% c("Africa", "Asia", "Europe", "Americas", "Oceania") & 
          !is.na(.$Area),
-        !str_detect(names(.), "F$|\\sCode|Unit"))
+        !str_detect(names(.), "F$|\\sCode|Unit|name"))
 
 joined[,c("Item", "Area") ] <- mapply(\(x,y,z) str_replace_all(x, y, z),list(joined$Item, joined$Area),c("\xe9","C\xf4"),c("e", "Co"))
 
@@ -51,8 +51,6 @@ mapData <- function(data, countries = NULL, commodities = NULL, years = NULL){
 }
 
 
-ss(mtcars, 1:10, )
-
   pivoted <- joined |>  
   pivot_longer.(cols = na.omit(str_extract(names(joined), "Y\\d+")), 
                       names_to = "Year", values_to = "value", fast_pivot = TRUE) |> 
@@ -62,7 +60,7 @@ ss(mtcars, 1:10, )
   
 ##################################################Line Plot Data ##########################################################
 
-linePlot <- function(data, year = 2020) {
+linePlot <- function(data, year) {
   
   #lineplot
   lp <- function(x, group, clr) 
@@ -105,16 +103,16 @@ linePlot <- function(data, year = 2020) {
   } else if(between.((data$Item |> funique() |> length()), 1,12) && 
              between.((data$Area |> funique() |> length()), 1, 12)){
     p <- pivoted |> 
-      sbt(Area %in% data$Area & Item %in% data$Item  & !is.na(value)) %>%
+      sbt(Area %in% data$Area & Item %in% data$Item  & !is.na(value) & Year <= year ) %>%
       lp("Item", "Commodity") + facet_wrap(vars(Area))
   } else if((data$Item |> funique() |> length()) > 12 && (data$Area |> funique() |> length()) <= 12){
     p <- pivoted |> 
-      sbt(Area %in% data$Area & Item %in% data$Item  & !is.na(value)) %>%
+      sbt(Area %in% data$Area & Item %in% data$Item  & !is.na(value) & Year <= year) %>%
       lp("Area", "Country") + facet_wrap(vars(Area))
   } else if(between.((data$Item |> funique() |> length()), 1,12) &&
              (data$Area |> funique() |> length()) > 12 ){
     p <- pivoted |> 
-      sbt(Area %in% data$Area & Item %in% data$Item  & !is.na(value)) %>%
+      sbt(Area %in% data$Area & Item %in% data$Item  & !is.na(value) & Year <= year) %>%
       lp("Item", "Commodity") + facet_wrap(vars(Item))
   }
     
@@ -187,3 +185,36 @@ plot_ts <- function(tsData, name) {
          title = paste(name, "prices from 2010 to current date (USD)"))
 }
 
+#-------------------------------------------------Bar_Graph------------------------------------------------
+library(scales)
+#ordered by region
+barPlot <- function(data, year) {
+    
+    areaToUse = c()
+    showFill = c()
+    
+    if(fndistinct(data$Area) > 20) {
+      areaToUse = sym("economy")
+    } else {
+      areaToUse = sym("Area")
+    }
+    
+    if(fndistinct(data$Item) > 16) {
+      showFill = "none"
+    } else {
+      showFill = "right"
+    }
+
+  
+  pivoted |> 
+    sbt(Area %in% data$Area & Item %in% data$Item  & !is.na(value) & Year <= year) |> 
+    ggplot( aes(x=eval(areaToUse), y=value)) +
+    scale_y_sqrt(labels = label_number(scale_cut = cut_short_scale())) +
+    geom_bar(stat="identity", alpha=.6, width=.4, aes(fill = Item)) +
+    scale_colour_brewer(type = "div", palette = "Spectral") +
+    coord_flip() +
+    xlab("") +
+    theme_bw() +
+    theme(legend.position = showFill)
+  
+}
