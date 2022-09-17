@@ -26,7 +26,11 @@ body <- dashboardBody(
                       plotOutput("history")
                       ),
              tabPanel("Treemap",
-                      plotOutput("treemap"))
+                      plotOutput("treemap")
+                      ),
+             tabPanel("Bargraph",
+                      plotOutput("bargraph")
+             ),
            )),
     column(4,
            tabBox(
@@ -88,7 +92,7 @@ ui <- dashboardPage(
     dashboardHeader(
       title = "Commodities"
     ),
-    dashboardSidebar(),
+    dashboardSidebar(disable = TRUE),
     body
 )
 
@@ -108,7 +112,7 @@ server <- function(input, output, session) {
     
   output$map <- renderLeaflet({
     
-    pal <- colorBin(c("viridis"), markers()[[paste0("Y",input$year)]], bins = 5)
+    pal <- colorBin(c("viridis"), markers()[[paste0("Y",input$year)]], bins = 7)
     
     #Only draw if map tab is in focus
     if(input$display == "Map") {
@@ -121,7 +125,7 @@ server <- function(input, output, session) {
       newM <- m |> addCircleMarkers(dat,
                                  radius = 6,
                                  lng = ~ X, lat = ~ Y,
-                                 label = ~ htmlEscape(Area),
+                                 label = ~ htmlEscape(paste(Area, dat[[paste0("Y",input$year)]])),
                                  color = ~ pal(dat[[paste0("Y",input$year)]]),
                                  stroke = FALSE, 
                                  fillOpacity = 0.6) |>
@@ -217,6 +221,14 @@ server <- function(input, output, session) {
     if(input$display == "Treemap") {
       
       treemp(markers(), year = input$year)
+    }
+  ) |> bindCache(input$commodities, input$countries, input$year)
+  
+  output$bargraph <- renderPlot(
+    
+    #Only draw if bargraph tab is in focus
+    if(input$display == "Bargraph") {
+      barPlot(markers(), year = input$year)
     }
   ) |> bindCache(input$commodities, input$countries, input$year)
   
