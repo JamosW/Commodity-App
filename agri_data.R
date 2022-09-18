@@ -25,6 +25,8 @@ worldXY<-  countriesData |>
          !.$Area %in% c("Africa", "Asia", "Europe", "Americas", "Oceania") & 
          !is.na(.$Area),
         !str_detect(names(.), "F$|\\sCode|Unit|name"))
+  
+  countriesData <- NULL
 
 joined[,c("Item", "Area") ] <- mapply(\(x,y,z) str_replace_all(x, y, z),list(joined$Item, joined$Area),c("\xe9","C\xf4"),c("e", "Co"))
 
@@ -50,12 +52,32 @@ mapData <- function(data, countries = NULL, commodities = NULL, years = NULL){
   
 }
 
-
   pivoted <- joined |>  
   pivot_longer.(cols = na.omit(str_extract(names(joined), "Y\\d+")), 
                       names_to = "Year", values_to = "value", fast_pivot = TRUE) |> 
   mtt(Year = as.numeric(str_replace_all(Year, "Y", "")), value =  if_else.(value == 0 | is.na(value), 1, value))
   
+  #limiter function for how many values can be displayed before using generalization
+  
+  limiter <-function(data, areaLimit, itemLimit, fillPos){
+    
+    areaToUse = c()
+    showFill = c()
+    
+    if(fndistinct(data$Area) > areaLimit) {
+      areaToUse = sym("economy")
+    } else {
+      areaToUse = sym("Area")
+    }
+    
+    if(fndistinct(data$Item) > itemLimit) {
+      showFill = "none"
+    } else {
+      showFill = fillPos
+    }
+    
+    return(list(areaToUse, showFill))
+  }
   
   
 ##################################################Line Plot Data ##########################################################
@@ -189,32 +211,62 @@ plot_ts <- function(tsData, name) {
 library(scales)
 #ordered by region
 barPlot <- function(data, year) {
-    
-    areaToUse = c()
-    showFill = c()
-    
-    if(fndistinct(data$Area) > 20) {
-      areaToUse = sym("economy")
-    } else {
-      areaToUse = sym("Area")
-    }
-    
-    if(fndistinct(data$Item) > 16) {
-      showFill = "none"
-    } else {
-      showFill = "right"
-    }
-
   
-  pivoted |> 
-    sbt(Area %in% data$Area & Item %in% data$Item  & !is.na(value) & Year <= year) |> 
+  values = limiter(data, areaLimit = 15, itemLimit = 12, fillPos = "right")
+  
+  areaToUse = values[[1]]
+  showFill = values[[2]]
+
+   pivoted |> 
+    sbt(Area %in% data$Area & Item %in% data$Item  & Year == year) |> 
     ggplot( aes(x=eval(areaToUse), y=value)) +
-    scale_y_sqrt(labels = label_number(scale_cut = cut_short_scale())) +
+    scale_y_sqrt() +
     geom_bar(stat="identity", alpha=.6, width=.4, aes(fill = Item)) +
-    scale_colour_brewer(type = "div", palette = "Spectral") +
+    scale_fill_brewer(type = "div", palette = "RdYlBu") +
     coord_flip() +
     xlab("") +
     theme_bw() +
     theme(legend.position = showFill)
-  
+   
 }
+
+#---------------------------------------Interactive Area-Chart-------------------------------------------------
+library(viridis)
+library(ggiraph)
+
+area_plot <- function(data, year){
+  
+  values = limiter(data, areaLimit = 7, itemLimit = 7, fillPos = "bottom")
+  
+  areaToUse = values[[1]]
+  showFill = values[[2]]
+  
+  if(data$Area != character(0) | data$Item != character(0)) {
+    
+  my_df = pivoted |>
+    sbt(Area %in% data$Area & Item %in% data$Item  & Year <= year) |>
+    gby(eval(areaToUse), Year) |>
+    smr(value = fsum(value)) |> 
+    fungroup()
+  
+  gg_area <- my_df |> 
+    ggplot(aes(x=Year, y=value, fill = eval(areaToUse))) +
+    geom_area_interactive(alpha=0.6 , size=.5, colour="white", 
+                          tooltip = paste(
+                            my_df$Area, 
+                             " ", year, " value: ",
+                            (my_df |> gby(eval(areaToUse)) |> 
+                               mtt(value = last(value)))$value, 
+                            " 1961", " value: ",
+                            (my_df |> gby(eval(areaToUse)) |> 
+                               mtt(value = first(value)))$value)) +
+    scale_fill_viridis(discrete = T) +
+    labs(x = "", fill = NULL) +
+    theme(legend.position = showFill)
+}
+
+  return(girafe(ggobj = gg_area))
+}
+
+ 
+#-------------------------------------------------------------------------------------------------------

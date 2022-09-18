@@ -4,7 +4,9 @@ library(shinydashboard)
 library(shinyWidgets)
 library(leaflet)
 library(htmltools)
+library(plotly)
 source("agri_data.R")
+
 
 
 countries <- funique(joined$Area)
@@ -29,8 +31,11 @@ body <- dashboardBody(
                       plotOutput("treemap")
                       ),
              tabPanel("Bargraph",
-                      plotOutput("bargraph")
-             ),
+                        plotOutput("bargraph")
+                      ),
+             tabPanel("Interactive area Chart",
+                      girafeOutput("areachart")
+             )
            )),
     column(4,
            tabBox(
@@ -83,10 +88,7 @@ body <- dashboardBody(
                   ))),
     fluidRow(
       verbatimTextOutput("text")
-    )
-
-  )
-)
+    )))
 
 ui <- dashboardPage(
     dashboardHeader(
@@ -98,6 +100,7 @@ ui <- dashboardPage(
 
 server <- function(input, output, session) {
   
+  
   markers <- reactive(
 
     mapData(data = joined, 
@@ -107,12 +110,12 @@ server <- function(input, output, session) {
       na_omit()
     )
   
+  values <- substitute(sapply(markers()$Area, \(x) 
+                   sum((markers()[[paste0("Y",input$year)]])[markers()$Area %in% x], na.rm = TRUE)))
   
-  
-    
   output$map <- renderLeaflet({
     
-    pal <- colorBin(c("viridis"), markers()[[paste0("Y",input$year)]], bins = 7)
+    pal <- colorBin(c("viridis"), eval(values), bins = 7)
     
     #Only draw if map tab is in focus
     if(input$display == "Map") {
@@ -125,12 +128,12 @@ server <- function(input, output, session) {
       newM <- m |> addCircleMarkers(dat,
                                  radius = 6,
                                  lng = ~ X, lat = ~ Y,
-                                 label = ~ htmlEscape(paste(Area, dat[[paste0("Y",input$year)]])),
-                                 color = ~ pal(dat[[paste0("Y",input$year)]]),
+                                 label = ~ htmlEscape(paste(Area, eval(values))),
+                                 color = ~ pal(eval(values)),
                                  stroke = FALSE, 
                                  fillOpacity = 0.6) |>
         leaflet::addLegend(pal = pal,
-                           values = ~ dat[[paste0("Y",input$year)]],
+                           values = ~ eval(values),
                            title = tit)
       
       return(newM)
@@ -147,7 +150,6 @@ server <- function(input, output, session) {
     } else { m }
     }
   }) |> bindCache(input$commodities, input$countries, input$year)
-  
 
   #observe input$commodities is not null, update input when value selected
   observe({
@@ -202,6 +204,7 @@ server <- function(input, output, session) {
                        inputId = "commodities", 
                        choices = all_items,
                        selected = input$commodities)
+      
     })
 
   })
@@ -225,10 +228,18 @@ server <- function(input, output, session) {
   ) |> bindCache(input$commodities, input$countries, input$year)
   
   output$bargraph <- renderPlot(
-    
+
     #Only draw if bargraph tab is in focus
     if(input$display == "Bargraph") {
       barPlot(markers(), year = input$year)
+    }
+  ) |> bindCache(input$commodities, input$countries, input$year)
+  
+  output$areachart <- renderGirafe(
+    
+    #Only draw if areachart tab is in focus
+    if(input$display == "Interactive area Chart") {
+      area_plot(markers(), year = input$year)
     }
   ) |> bindCache(input$commodities, input$countries, input$year)
   
@@ -245,8 +256,12 @@ server <- function(input, output, session) {
         )}
 
   )
+  
+  output$text = renderPrint(
+    paste(markers()$Item)
+  )
+  
 }
-
+character(0)
 
 shinyApp(ui, server)
-
