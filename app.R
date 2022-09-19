@@ -34,7 +34,7 @@ body <- dashboardBody(
                         plotOutput("bargraph")
                       ),
              tabPanel("Interactive area Chart",
-                      girafeOutput("areachart")
+                      girafeOutput("areachart", height = "400px")
              )
            )),
     column(4,
@@ -74,6 +74,11 @@ body <- dashboardBody(
 
     )),
   fluidRow(
+    column(5, offset = 0.99,
+    textInput("dataSource", label = NULL, "Data Source: Food and Agricultural Organization", width = "350px")),
+    br(), br(), br(), br(),br(),br(),br()
+  ),
+  fluidRow(
     column(12,
           box(id = "Financial",
               width = 12,
@@ -85,14 +90,12 @@ body <- dashboardBody(
                                          
                            )
                            
-                  ))),
-    fluidRow(
-      verbatimTextOutput("text")
-    )))
+                  )))))
 
 ui <- dashboardPage(
     dashboardHeader(
-      title = "Commodities"
+      title = "Agricultural Commodities",
+      titleWidth = "400px"
     ),
     dashboardSidebar(disable = TRUE),
     body
@@ -178,8 +181,10 @@ server <- function(input, output, session) {
                        selected = input$countries)
     })
     
-  #observe input$commodities is not null, update input when value selected  
+    
   })
+  
+  #observe input$commodities is not null, update input when value selected
   
   observe({
     
@@ -244,6 +249,9 @@ server <- function(input, output, session) {
   ) |> bindCache(input$commodities, input$countries, input$year)
   
   
+  output$source = renderText({ input$dataSource })
+    
+  
   output$ts <- renderPlot(
     
     if(any(str_detect(input$commodities, names(commods)))) {
@@ -257,11 +265,7 @@ server <- function(input, output, session) {
 
   )
   
-  output$text = renderPrint(
-    paste(markers()$Item)
-  )
-  
 }
-character(0)
+
 
 shinyApp(ui, server)
