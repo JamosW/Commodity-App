@@ -55,7 +55,7 @@ mapData <- function(data, countries = NULL, commodities = NULL, years = NULL){
   pivoted <- joined |>  
   pivot_longer.(cols = na.omit(str_extract(names(joined), "Y\\d+")), 
                       names_to = "Year", values_to = "value", fast_pivot = TRUE) |> 
-  mtt(Year = as.numeric(str_replace_all(Year, "Y", "")), value =  if_else.(value == 0 | is.na(value), 1, value))
+  mtt(Year = as.numeric(str_replace_all(Year, "Y", "")), value =  if_else.(value == 0 | is.na(value), 0, value))
   
   #limiter function for how many values can be displayed before using generalization
   
@@ -90,39 +90,14 @@ linePlot <- function(data, year) {
     ggplot(x) + 
       geom_smooth(aes(x = Year, y = value, color = .data[[group]]), 
                   na.rm = TRUE, se = FALSE, size = 1) +
-      scale_y_log10() + labs(x = "Year",
-                             y = "Production",
-                             color = clr) + theme_bw()
+      scale_y_continuous(labels = label_number(scale_cut = cut_long_scale())) + 
+      labs(x = "Year",
+           y = "Production (ha)",
+           color = clr) + theme_bw()
   }
-  
-  
-  if(all(data$Area == "World")) {
-    p <- pivoted |> 
-      sbt(Area %in% c("Africa", "Europe", "Asia", "Americas", "Oceania") & !is.na(value)) %>%
-      lp("Area", "Country")
-  } else if(all(data$Area == "Africa")) {
-   p <-  pivoted |> 
-      sbt(Area %in% c("Northern Africa", "Southern Africa", "Western Africa") &
-          !is.na(value)) %>%
-      lp("Area", "Country" )
-   
-  } else if(all(data$Area == "Asia")) {
-    p <-  pivoted|> 
-      sbt(Area %in% c("Central Asia", "Southern Asia", "Western Asia") & !is.na(value)) %>%
-      lp("Area", "Country")
-  } else if(all(data$Area == "Americas")) {
-    p <- pivoted |> 
-      sbt(Area %in% c("Northern America", "Central America", "South America")
-          & !is.na(value)) %>%
-      lp("Area", "Country")
-  } else if (all(data$Area == "Europe")) {
-    p <- pivoted |> 
-      sbt(Area %in% c("Northern Europe", "Southern Europe", "Western Europe", "Eastern Europe")
-          & !is.na(value)) %>%
-      lp("Area", "Country")
     
     #only when on area is selected and less than 10 items, more than 10 is too much clutter
-  } else if(between.((data$Item |> funique() |> length()), 1,12) && 
+   if(between.((data$Item |> funique() |> length()), 1,12) && 
              between.((data$Area |> funique() |> length()), 1, 12)){
     p <- pivoted |> 
       sbt(Area %in% data$Area & Item %in% data$Item  & !is.na(value) & Year <= year ) %>%
@@ -220,13 +195,14 @@ barPlot <- function(data, year) {
    pivoted |> 
     sbt(Area %in% data$Area & Item %in% data$Item  & Year == year) |> 
     ggplot( aes(x=eval(areaToUse), y=value)) +
-    scale_y_sqrt() +
-    geom_bar(stat="identity", alpha=.6, width=.4, aes(fill = Item)) +
-    scale_fill_brewer(type = "div", palette = "RdYlBu") +
+    scale_y_continuous(labels = label_number(scale_cut = cut_long_scale()), trans = "sqrt") +
+    geom_bar(stat="identity", width=.4, aes(fill = Item)) +
+    scale_fill_brewer(type = "div", palette = "PRGn") +
     coord_flip() +
     xlab("") +
-    theme_bw() +
-    theme(legend.position = showFill)
+    theme_grey() +
+    theme(legend.position = showFill,
+          axis.text = element_text(size = 12))
    
 }
 
@@ -240,8 +216,6 @@ area_plot <- function(data, year){
   
   areaToUse = values[[1]]
   showFill = values[[2]]
-  
-  if(data$Area != character(0) | data$Item != character(0)) {
     
   my_df = pivoted |>
     sbt(Area %in% data$Area & Item %in% data$Item  & Year <= year) |>
@@ -249,24 +223,32 @@ area_plot <- function(data, year){
     smr(value = fsum(value)) |> 
     fungroup()
   
+  valueChoice <- function(df, choice){
+    value = df|> gby(areaToUse) |> 
+      mtt(value = eval(call(choice, value)))
+    
+    return(value)
+  }
+  
   gg_area <- my_df |> 
     ggplot(aes(x=Year, y=value, fill = eval(areaToUse))) +
     geom_area_interactive(alpha=0.6 , size=.5, colour="white", 
-                          tooltip = paste(
-                            my_df$Area, 
-                             " ", year, " value: ",
-                            (my_df |> gby(eval(areaToUse)) |> 
-                               mtt(value = last(value)))$value, 
-                            " 1961", " value: ",
-                            (my_df |> gby(eval(areaToUse)) |> 
-                               mtt(value = first(value)))$value)) +
+                          tooltip = paste0(
+                            my_df$areaToUse,
+                            " 1961", ": ",
+                            tryCatch(expr = valueChoice(my_df, "first")$value, error = function(e) e, finally = ""), 
+                            " ", year, ": ",
+                            tryCatch(expr = valueChoice(my_df, "last")$value, error = function(e) e, finally = ""))) +
     scale_fill_viridis(discrete = T) +
     labs(x = "", fill = NULL) +
-    theme(legend.position = showFill)
-}
+    theme(legend.position = showFill,
+          axis.text = element_text(size = 6)) +
+    scale_y_continuous(labels = label_number(scale_cut = cut_long_scale()), trans = "sqrt") +
+    theme_bw()
 
-  return(girafe(ggobj = gg_area))
+  return(girafe(ggobj = gg_area, width_svg = 8, height_svg = 4))
 }
-
  
 #-------------------------------------------------------------------------------------------------------
+
+
