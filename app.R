@@ -1,17 +1,18 @@
 library(shiny)
 library(ggplot2)
 library(shinydashboard)
+library(shinycssloaders)
 library(shinyWidgets)
 library(leaflet)
 library(htmltools)
 library(plotly)
 source("agri_data.R")
 
-
-
 countries <- funique(joined$Area)
 
-commodities <- funique(joined$Item)
+commodities <- funique(sbt(joined, Element == "Area harvested")$Item)
+
+subsets <- funique(joined$Element)
 
 body <- dashboardBody(
   
@@ -25,16 +26,16 @@ body <- dashboardBody(
                leafletOutput("map")
                ),
              tabPanel("History",
-                      plotOutput("history")
+                      withSpinner(plotOutput("history"))
                       ),
              tabPanel("Treemap",
-                      plotOutput("treemap")
+                      withSpinner(plotOutput("treemap"))
                       ),
-             tabPanel("Bargraph",
-                        plotOutput("bargraph")
+             tabPanel("Percentages",
+                      withSpinner(plotOutput("bargraph"))
                       ),
              tabPanel("Interactive area Chart",
-                      girafeOutput("areachart", height = "400px")
+                      withSpinner(girafeOutput("areachart", height = "400px"))
              )
            )),
     column(4,
@@ -61,6 +62,15 @@ body <- dashboardBody(
                         choiceValues = countries, 
                         width = "100%"
                       )),
+             tabPanel("Subset",
+                      awesomeRadio(
+                        inputId = "subset",
+                        label = "Element subset:", 
+                        choices = subsets,
+                        selected = "Area harvested",
+                        status = "warning"
+                      ))
+             
            ),
            fluidRow(
              sliderInput("year",
@@ -73,10 +83,10 @@ body <- dashboardBody(
                          width = "410px"))
 
     )),
+  br(), br(), br(), br(),br(),br(),br(), br(), br(),br(),br(),br(),
   fluidRow(
     column(5, offset = 0.99,
-    textInput("dataSource", label = NULL, "Data Source: Food and Agricultural Organization", width = "350px")),
-    br(), br(), br(), br(),br(),br(),br()
+    textInput("dataSource", label = NULL, "Data Source: Food and Agricultural Organization", width = "350px"))
   ),
   fluidRow(
     column(12,
@@ -90,7 +100,9 @@ body <- dashboardBody(
                                          
                            )
                            
-                  )))))
+                  ))),
+    # verbatimTextOutput("text")
+    ))
 
 ui <- dashboardPage(
     dashboardHeader(
@@ -109,7 +121,8 @@ server <- function(input, output, session) {
     mapData(data = joined, 
             countries = input$countries, 
             commodities = input$commodities, 
-            years  = paste0("Y",input$year)) |> 
+            years  = paste0("Y",input$year),
+            .subset = input$subset) |> 
       na_omit()
     )
   
@@ -152,18 +165,19 @@ server <- function(input, output, session) {
       
     } else { m }
     }
-  }) |> bindCache(input$commodities, input$countries, input$year)
+  }) |> bindCache(input$commodities, input$countries, input$year, input$subset)
 
   #observe input$commodities is not null, update input when value selected
   observe({
     
-    years = input$year
+    year = input$year
     
     all_areas <- joined$area |> funique()  |> sort()
     
     available_areas <- mapData(data = joined,
                                commodities = input$commodities, 
-                               years  = paste0("Y",years)) |> 
+                               years  = paste0("Y",year),
+                               .subset = input$subset) |> 
       na_omit()
     
     selected_areas <- countries[countries %in% (available_areas)$Area]
@@ -188,12 +202,14 @@ server <- function(input, output, session) {
   
   observe({
     
-    years = input$year
+    year = input$year
     
     all_items <- joined$item |> funique() |> sort()
     
     available_items <- mapData(data = joined,
-                               countries = input$countries, years  = paste0("Y", years)) |> 
+                               countries = input$countries, 
+                               years  = paste0("Y", year),
+                               .subset = input$subset) |> 
       na_omit()
     
     selected_items <- commodities[commodities %in% (available_items)$Item] 
@@ -219,34 +235,34 @@ server <- function(input, output, session) {
     
     #Only draw if history tab is in focus
     if(input$display == "History") {
-    linePlot(markers(), year = input$year)
+    linePlot(markers(), .subset = input$subset, year = input$year, country = input$countries, commodity = input$commodities)
     }
-  ) |> bindCache(input$commodities, input$countries, input$year)
+  ) |> bindCache(input$commodities, input$countries, input$year, input$subset)
   
   output$treemap <- renderPlot(
     
     #Only draw if Treemap tab is in focus
     if(input$display == "Treemap") {
       
-      treemp(markers(), year = input$year)
+      treemp(markers(), year = input$year, .subset = input$subset)
     }
-  ) |> bindCache(input$commodities, input$countries, input$year)
+  ) |> bindCache(input$commodities, input$countries, input$year, input$subset)
   
   output$bargraph <- renderPlot(
 
     #Only draw if bargraph tab is in focus
-    if(input$display == "Bargraph") {
-      barPlot(markers(), year = input$year)
+    if(input$display == "Percentages") {
+      barPlot(markers())
     }
-  ) |> bindCache(input$commodities, input$countries, input$year)
+  ) |> bindCache(input$commodities, input$countries, input$year, input$subset)
   
   output$areachart <- renderGirafe(
     
     #Only draw if areachart tab is in focus
     if(input$display == "Interactive area Chart") {
-      area_plot(markers(), year = input$year)
+      areaPlot(markers(), country = input$countries, commodity = input$commodities, subset = input$subset, year = input$year)
     }
-  ) |> bindCache(input$commodities, input$countries, input$year)
+  ) |> bindCache(input$commodities, input$countries, input$year, input$subset)
   
   
   output$source = renderText({ input$dataSource })
@@ -269,3 +285,4 @@ server <- function(input, output, session) {
 
 
 shinyApp(ui, server)
+
