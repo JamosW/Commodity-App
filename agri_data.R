@@ -1,34 +1,7 @@
-library(sf)
-library(collapse)
-library(stringr)
-library(tidytable)
+library(data.table)
 
-#join XY data to data frame that is used for mapping
-joined <- data.table::fread("agricultural_commodities.csv")
-countriesData <- rnaturalearthdata::countries50
+joined <- fread("cleanedFrame.csv")
 
-#take geometry from world sf object, get the X and Y Coordinates and append the columns
-worldXY <- countriesData |>
-    st_as_sf() |>
-    st_geometry() |>
-    st_make_valid() |>
-    st_centroid() |>
-    unlist() |>
-    matrix(ncol = 2, byrow = T) |>
-    as.data.frame() |>
-    setNames(c("X", "Y")) |>
-    cbind(name = countriesData$name, economy = countriesData$economy)
-
-  joined <- joined |>
-  fuzzyjoin::fuzzy_left_join(worldXY , match_fun = list(stringr::str_detect), by = c("Area" = "name")) %>%
-    ss(!.$Area %in% c("Africa", "Asia", "Europe", "Americas", "Oceania") & 
-         .$Element %in% c("Area harvested","Yield","Production") &
-         !is.na(.$Area),
-        !str_detect(names(.), "F$|\\sCode|Unit|name"))
-  
-  countriesData <- NULL
-  
-joined[,c("Item", "Area") ] <- mapply(\(x,y,z) str_replace_all(x, y, z),list(joined$Item, joined$Area),c("\xe9","C\xf4"),c("e", "Co"))
 
 mapData <- function(data, countries = NULL, commodities = NULL, years, .subset){
   
@@ -54,9 +27,9 @@ mapData <- function(data, countries = NULL, commodities = NULL, years, .subset){
 pivoted_data <- function(data) {
   
   pivoted <- data %>% 
-      pivot_longer.(cols = na_omit(str_extract(names(.), "Y\\d+")), 
+    tidytable::pivot_longer(cols = na_omit(str_extract(names(.), "Y\\d+")), 
                     names_to = "Year", values_to = "value") |> 
-      mtt(Year = as.numeric(str_replace_all(Year, "Y", "")), value =  if_else.(value == 0 | is.na(value), 0, value))
+      mtt(Year = as.numeric(str_replace_all(Year, "Y", "")), value =  ifelse(value == 0 | is.na(value), 0, value))
   
   return(pivoted)
   
@@ -91,14 +64,16 @@ linePlot <- function(data, .subset, year, country, commodity) {
   lp <- function(x, group = NULL, clr = NULL) 
   {
     
-    
-    plot <- ggplot(x) + 
-      geom_smooth(aes(x = Year, y = value, color = ifelse(is.null(group),"red",.data[[group]])), 
+    tryCatch({plot <- ggplot(x) + 
+      geom_smooth(aes(x = Year, y = value, col = "red"), 
                   na.rm = TRUE, se = FALSE, size = 1) +
       scale_y_continuous(labels = label_number(scale_cut = cut_long_scale())) + 
       labs(x = "Year",
            y = .subset,
-           color = NULL) + theme_bw()
+           col = NULL) + theme_bw()},
+      warning = function(e) e,
+      finally = ""
+    )
     
     return(plot)
   }
@@ -112,16 +87,16 @@ linePlot <- function(data, .subset, year, country, commodity) {
   
     
     #only when on area is selected and less than 10 items, more than 10 is too much clutter
-  if(between.((commodity |>  fndistinct()), 1,12) &
-     between.((country |> fndistinct()), 1, 12)){
+  if(between((commodity |>  fndistinct()), 1,12) &
+     between((country |> fndistinct()), 1, 12)){
     p <- subset |>
       lp("Item", "Commodity") + facet_wrap(vars(Area))
   } else if((commodity |> fndistinct()) > 12 & (country |> fndistinct()) <= 12){
     p <- subset |>
-      lp()
+      lp() + theme(legend.position = "none")
   } else {
     p <- subset |>
-      lp()
+      lp() + theme(legend.position = "none")
   }
   
    return(p)
@@ -163,36 +138,6 @@ treemp <-function(df, year, .subset) {
   return(bm)
 }
 
-
-
-#------------------------------------------------------Time Series---------------------------------------------------------
-library(xts)
-#load data
-
-
-#commoditites
-commods <- list("Sugar" = "SB=F", "Cotton" = "CT=F", "Cocoa" = "CC=F", "Soybean" = "ZS=F", "Oat" = "ZO=F",
-                "Corn" = "ZO=F", "Coffee" = "KC=F")
-
-ts_data <- function(type, years = NULL) {
-  
-  #load raw external data
-  rawd <- data.table::fread(paste0("https://query1.finance.yahoo.com/v7/finance/download/", type, "?period1=1305331200&period2=1652486400&interval=1d&events=history&includeAdjustedClose=true"))
-  
-  #convert to xts, order by date, remove the date
-  xts::xts(rawd[-1], order.by = rawd$Date) 
-}
-
-
-#takes the time series data and it's name to be plotted
-plot_ts <- function(tsData, name) {
-  
-  ggplot(data = tsData) + geom_line(aes(x = tsData |> index(), y = `Adj Close` )) +
-    labs(x = "Year",
-         y = "Adjusted Closing Price",
-         title = paste(name, "prices from 2010 to current date (USD)"))
-}
-
 #-------------------------------------------------Bar_Graph------------------------------------------------
 library(scales)
 #ordered by region
@@ -211,7 +156,7 @@ barPlot <- function(data) {
     ggplot(aes(x=eval(areaToUse), y=value)) +
     geom_col( width=.2, aes(fill = Item), position = position_fill()) +
     coord_flip() +
-    xlab("Percent") +
+    labs(x = "Region", y = "Percent") +
     theme_grey() +
     theme(legend.position = showFill,
           axis.text = element_text(size = 12)) +
@@ -231,6 +176,7 @@ library(ggiraph)
 
 areaPlot <- function(data, subset, commodity, country, year){
   
+  #limit the amount of countries to plot at 7, if more, we use general continent data
   values = limiter(data, areaLimit = 7, itemLimit = 7, fillPos = "bottom")
   
   areaToUse = values[[1]]
@@ -265,7 +211,7 @@ areaPlot <- function(data, subset, commodity, country, year){
                             " ", year, ": ",
                             tryCatch(expr = valueChoice(my_df, "last")$value, error = function(e) e, finally = ""))) +
     scale_fill_viridis(discrete = T) +
-    labs(x = "", fill = NULL) +
+    labs(x = "Year", fill = NULL, y = subset) +
     theme(legend.position = showFill,
           axis.text = element_text(size = 6)) +
     scale_y_continuous(labels = label_number(scale_cut = cut_long_scale()), trans = "sqrt") +

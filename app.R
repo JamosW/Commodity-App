@@ -1,41 +1,45 @@
 library(shiny)
-library(ggplot2)
 library(shinydashboard)
 library(shinycssloaders)
 library(shinyWidgets)
 library(leaflet)
 library(htmltools)
-library(plotly)
+library(collapse)
+library(ggplot2)
+library(stringr)
+library(echarts4r)
 source("agri_data.R")
+source("leaflet_logic.R")
 
+#joined data read in from agri_data file
 countries <- funique(joined$Area)
 
 commodities <- funique(sbt(joined, Element == "Area harvested")$Item)
 
 subsets <- funique(joined$Element)
 
-body <- dashboardBody(
+body <- shinydashboard::dashboardBody(
   
   fluidRow(
     column(8,
            tabBox(
              id = "display",
              width = 12,
-             height = "400px",
+             height = "800px",
              tabPanel("Map",
-               leafletOutput("map")
+               leafletOutput("map", height = 800)
                ),
              tabPanel("History",
-                      withSpinner(plotOutput("history"))
-                      ),
+                      withSpinner(plotOutput("history", height = "800px"))
+             ),
              tabPanel("Treemap",
-                      withSpinner(plotOutput("treemap"))
-                      ),
+                      withSpinner(plotOutput("treemap", height = "800px"))
+             ),
              tabPanel("Percentages",
-                      withSpinner(plotOutput("bargraph"))
-                      ),
+                      withSpinner(plotOutput("bargraph", height = "800px"))
+             ),
              tabPanel("Interactive area Chart",
-                      withSpinner(girafeOutput("areachart", height = "400px"))
+                      withSpinner(girafeOutput("areachart", height = "800px"))
              )
            )),
     column(4,
@@ -80,29 +84,15 @@ body <- dashboardBody(
                          value = 2020,
                          animate = TRUE,
                          sep = "",
-                         width = "410px"))
+                         width = "410px"),
+             verbatimTextOutput(outputId = "text"))
 
     )),
   br(), br(), br(), br(),br(),br(),br(), br(), br(),br(),br(),br(),
   fluidRow(
     column(5, offset = 0.99,
     textInput("dataSource", label = NULL, "Data Source: Food and Agricultural Organization", width = "350px"))
-  ),
-  fluidRow(
-    column(12,
-          box(id = "Financial",
-              width = 12,
-              height = "10%",
-              collapsed = TRUE,
-              collapsible = TRUE,
-              tabPanel("Time Series",
-                        plotOutput("ts",
-                                         
-                           )
-                           
-                  ))),
-    # verbatimTextOutput("text")
-    ))
+  ))
 
 ui <- dashboardPage(
     dashboardHeader(
@@ -131,40 +121,26 @@ server <- function(input, output, session) {
   
   output$map <- renderLeaflet({
     
-    pal <- colorBin(c("viridis"), eval(values), bins = 7)
-    
     #Only draw if map tab is in focus
     if(input$display == "Map") {
+      
+      pal <- colorBin(c("viridis"), eval(values), bins = 7)
     
     m <- leaflet(data= markers()) |>
       addTiles(options = tileOptions(minZoom = 1, maxZoom = 5))
     
-    leaf_extra <- function(m, tit, dat) {
-      #function for map, to reduce repitition
-      newM <- m |> addCircleMarkers(dat,
-                                 radius = 6,
-                                 lng = ~ X, lat = ~ Y,
-                                 label = ~ htmlEscape(paste(Area, eval(values))),
-                                 color = ~ pal(eval(values)),
-                                 stroke = FALSE, 
-                                 fillOpacity = 0.6) |>
-        leaflet::addLegend(pal = pal,
-                           values = ~ eval(values),
-                           title = tit)
-      
-      return(newM)
-    }
-    
-    if(between.(length(input$countries),1, 20) || between.(length(input$commodities), 1,20)) {
+    if(between(length(input$countries),1, 20) || between(length(input$commodities), 1,20)) {
       
       if(length(funique(markers()$Item)) == 1) {
-        m |> leaf_extra(tit = paste(funique(markers()$Item), "(ha)"), dat = markers())
+        m |> leaf_extra(tit = paste(funique(markers()$Item), "(ha)"), dat = markers(), val = values, pall = pal)
       } else {
-        m |> leaf_extra(tit = "Area Harvested (ha)", dat = markers())
+        m |> leaf_extra(tit = "Area Harvested (ha)", dat = markers(), val = values, pall = pal)
       }
       
     } else { m }
+
     }
+    
   }) |> bindCache(input$commodities, input$countries, input$year, input$subset)
 
   #observe input$commodities is not null, update input when value selected
@@ -267,22 +243,55 @@ server <- function(input, output, session) {
   
   output$source = renderText({ input$dataSource })
     
-  
-  output$ts <- renderPlot(
+  output$text = renderPrint({
     
-    if(any(str_detect(input$commodities, names(commods)))) {
-      
-      
-      #s is the input value needed
-      plot_ts(
-        tsData = ts_data(type = commods[str_detect(input$commodities, names(commods))]),
-        name = names(commods)[str_detect(input$commodities, names(commods))]
-        )}
+    values = limiter(joined, areaLimit = 7, itemLimit = 7, fillPos = "bottom")
+    
+    areaToUse = values[[1]]
+    showFill = values[[2]]
 
-  )
+    years <- as.numeric(na_omit(str_extract(names(joined), "1.*|2.*")))
+    
+    my_df = pivoted_data(mapData(data = joined, 
+                                 years = str_c("Y",years[years <= as.numeric(str_replace(input$year, "Y", ""))]),
+                                 .subset = input$subset,
+                                 countries = input$countries, 
+                                 commodities = input$commodities)) |>
+      sbt(Area %in% joined$Area & Item %in% joined$Item) |>
+      gby(eval(areaToUse), Year) |>
+      smr(value = fsum(value)) |> 
+      fungroup()
+    
+    valueChoice <- function(df, choice){
+      value = df|> gby(areaToUse) |> 
+        mtt(value = eval(call(choice, value)))
+      
+      return(value)
+    }
+    
+    base <-ggplot(my_df, aes(x=Year, fill = areaToUse))
+    
+    
+    
+    interactive <- base + 
+      geom_area_interactive(aes(y = value), alpha=0.6 , size=.5, colour="white", tooltip = "hey")
+    
+    interactive
+    
+  })
+  
+  
   
 }
 
 
 shinyApp(ui, server)
+
+
+
+CO2 |>
+  group_by(Plant) |>
+  e_charts(conc) |>
+  e_area(uptake) |>
+  e_tooltip(trigger = "axis")
 
