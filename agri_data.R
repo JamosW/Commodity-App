@@ -1,7 +1,8 @@
 library(data.table)
+library(arrow)
+library(dplyr)
 
-joined <- fread("cleanedFrame.csv")
-
+joined <- fread("cleanedFrame.csv") |> qTBL()
 
 mapData <- function(data, countries = NULL, commodities = NULL, years, .subset){
   
@@ -40,11 +41,12 @@ pivoted_data <- function(data) {
     
     areaToUse = c()
     showFill = c()
-    
+
+    #if more than 7 countries
     if(fndistinct(data$Area) > areaLimit) {
-      areaToUse = sym("economy")
+      areaToUse = parse(text = "economy")
     } else {
-      areaToUse = sym("Area")
+      areaToUse = parse(text = "Area")
     }
     
     if(fndistinct(data$Item) > itemLimit) {
@@ -174,51 +176,37 @@ barPlot <- function(data) {
 library(viridis)
 library(ggiraph)
 
-areaPlot <- function(data, subset, commodity, country, year){
+areaPlot <- function(df, subset, commodity, country, year){
+  
+  pivoted_df <- pivoted_data(mapData(data = df,
+                                     years = paste0("Y", 1961:year),
+                                     .subset = subset,
+                                     countries = country,
+                                     commodities = commodity))
   
   #limit the amount of countries to plot at 7, if more, we use general continent data
-  values = limiter(data, areaLimit = 7, itemLimit = 7, fillPos = "bottom")
+  values = limiter(pivoted_df, areaLimit = 7, itemLimit = 7, fillPos = "bottom")
   
   areaToUse = values[[1]]
   showFill = values[[2]]
-  
-  years <- as.numeric(na_omit(str_extract(names(joined), "1.*|2.*")))
     
-  my_df = pivoted_data(mapData(data = joined, 
-                               years = str_c("Y",years[years <= as.numeric(str_replace(year, "Y", ""))]),
-                               .subset = subset,
-                       countries = country, 
-                       commodities = commodity)) |>
-    sbt(Area %in% data$Area & Item %in% data$Item) |>
-    gby(eval(areaToUse), Year) |>
+  new_df = pivoted_df  |>
+    sbt(Area %in% df$Area & Item %in% df$Item) |>
+    gby(eval(areaToUse), Year)|>
     smr(value = fsum(value)) |> 
+    sbt(areaToUse != "") |> 
     fungroup()
   
-  valueChoice <- function(df, choice){
-    value = df|> gby(areaToUse) |> 
-      mtt(value = eval(call(choice, value)))
+    chart = new_df |> 
+      group_by(areaToUse) |>
+      e_charts(Year) |>
+      e_area(value, stack = "stack") |>
+      e_x_axis(type = "category") |>
+      e_tooltip(trigger = "axis")
     
-    return(value)
-  }
-  
-  gg_area <- my_df |> 
-    ggplot(aes(x=Year, y=value, fill = eval(areaToUse))) +
-    geom_area_interactive(alpha=0.6 , size=.5, colour="white", 
-                          tooltip = paste0(
-                            my_df$areaToUse,
-                            " 1961", ": ",
-                            tryCatch(expr = valueChoice(my_df, "first")$value, error = function(e) e, finally = ""), 
-                            " ", year, ": ",
-                            tryCatch(expr = valueChoice(my_df, "last")$value, error = function(e) e, finally = ""))) +
-    scale_fill_viridis(discrete = T) +
-    labs(x = "Year", fill = NULL, y = subset) +
-    theme(legend.position = showFill,
-          axis.text = element_text(size = 6)) +
-    scale_y_continuous(labels = label_number(scale_cut = cut_long_scale()), trans = "sqrt") +
-    theme_bw()
-
-  return(girafe(ggobj = gg_area, width_svg = 8, height_svg = 4))
+    return(chart)
 }
  
 #-------------------------------------------------------------------------------------------------------
+
 

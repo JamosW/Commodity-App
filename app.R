@@ -14,9 +14,9 @@ source("leaflet_logic.R")
 #joined data read in from agri_data file
 countries <- funique(joined$Area)
 
-commodities <- funique(sbt(joined, Element == "Area harvested")$Item)
+subset <- funique(joined$Element)
 
-subsets <- funique(joined$Element)
+commodities <- funique(sbt(joined, Element == "Area harvested")$Item)
 
 body <- shinydashboard::dashboardBody(
   
@@ -27,19 +27,20 @@ body <- shinydashboard::dashboardBody(
              width = 12,
              height = "800px",
              tabPanel("Map",
-               leafletOutput("map", height = 800)
+               leafletOutput("map", height = "600px")
                ),
+             #possibly create modules for repetition
              tabPanel("History",
-                      withSpinner(plotOutput("history", height = "800px"))
+                      withSpinner(plotOutput("history", height = "600px"))
              ),
              tabPanel("Treemap",
-                      withSpinner(plotOutput("treemap", height = "800px"))
+                      withSpinner(plotOutput("treemap", height = "600px"))
              ),
              tabPanel("Percentages",
-                      withSpinner(plotOutput("bargraph", height = "800px"))
+                      withSpinner(plotOutput("bargraph", height = "600px"))
              ),
              tabPanel("Interactive area Chart",
-                      withSpinner(girafeOutput("areachart", height = "800px"))
+                      withSpinner(echarts4rOutput("areachart", height = "600px"))
              )
            )),
     column(4,
@@ -70,7 +71,7 @@ body <- shinydashboard::dashboardBody(
                       awesomeRadio(
                         inputId = "subset",
                         label = "Element subset:", 
-                        choices = subsets,
+                        choices = subset,
                         selected = "Area harvested",
                         status = "warning"
                       ))
@@ -85,13 +86,15 @@ body <- shinydashboard::dashboardBody(
                          animate = TRUE,
                          sep = "",
                          width = "410px"),
-             verbatimTextOutput(outputId = "text"))
+             verbatimTextOutput(outputId = "text")
+             )
 
     )),
   br(), br(), br(), br(),br(),br(),br(), br(), br(),br(),br(),br(),
   fluidRow(
     column(5, offset = 0.99,
-    textInput("dataSource", label = NULL, "Data Source: Food and Agricultural Organization", width = "350px"))
+    # textInput("dataSource", label = NULL, "Data Source: Food and Agricultural Organization", width = "350px")
+    )
   ))
 
 ui <- dashboardPage(
@@ -148,63 +151,46 @@ server <- function(input, output, session) {
     
     year = input$year
     
-    all_areas <- joined$area |> funique()  |> sort()
+    available_areas <- funique(markers()$Area)
+    available_items <- funique(markers()$Item)
     
-    available_areas <- mapData(data = joined,
-                               commodities = input$commodities, 
-                               years  = paste0("Y",year),
-                               .subset = input$subset) |> 
-      na_omit()
-    
-    selected_areas <- countries[countries %in% (available_areas)$Area]
-    
-    isolate(if(!is.null(input$commodities)) {
-      updateMultiInput(session = session, 
-                       inputId = "countries", 
-                       choices = selected_areas |>  sort(),
-                       selected = input$countries)
-                       
-    } else {
-      updateMultiInput(session = session, 
-                       inputId = "countries", 
-                       choices = all_areas,
-                       selected = input$countries)
-    })
+    selected_areas <- sbt(joined, Item %in% available_items & Element == input$subset)$Area |> sort() |> funique()
+    selected_items <- sbt(joined, Area %in% available_areas & Element == input$subset)$Item |> sort() |> funique()
     
     
-  })
-  
-  #observe input$commodities is not null, update input when value selected
-  
-  observe({
-    
-    year = input$year
-    
-    all_items <- joined$item |> funique() |> sort()
-    
-    available_items <- mapData(data = joined,
-                               countries = input$countries, 
-                               years  = paste0("Y", year),
-                               .subset = input$subset) |> 
-      na_omit()
-    
-    selected_items <- commodities[commodities %in% (available_items)$Item] 
-    
-    isolate(if(!is.null(input$countries)) {
-      updateMultiInput(session = session, 
-                       inputId = "commodities", 
-                       choices = selected_items |>  sort(),
-                       selected = input$commodities)
-      
-    } else {
-      updateMultiInput(session = session, 
-                       inputId = "commodities", 
-                       choices = all_items,
-                       selected = input$commodities)
-      
-    })
 
-  })
+    
+    if(!is.null(input$commodities)) {
+      updateMultiInput(session = session, 
+                       inputId = "countries", 
+                       choices = selected_areas,
+                       selected = input$countries)
+      print(available_items)
+      
+    } else {
+      updateMultiInput(session = session, 
+                       inputId = "countries",
+                       choices = countries,
+                       selected = input$countries)
+      
+    }
+    
+    
+    if(!is.null(input$countries)) {
+      updateMultiInput(session = session, 
+                       inputId = "commodities", 
+                       choices = selected_items,
+                       selected = input$commodities)
+    } else {
+      updateMultiInput(session = session, 
+                       inputId = "commodities", 
+                       choices = commodities,
+                       selected = input$commodities)
+      
+    }
+
+  }) |> 
+    bindEvent(input$commodities, input$countries, input$year, input$subset)
   
 
   output$history <- renderPlot(
@@ -232,53 +218,23 @@ server <- function(input, output, session) {
     }
   ) |> bindCache(input$commodities, input$countries, input$year, input$subset)
   
-  output$areachart <- renderGirafe(
+  output$areachart <- renderEcharts4r(
     
     #Only draw if areachart tab is in focus
     if(input$display == "Interactive area Chart") {
-      areaPlot(markers(), country = input$countries, commodity = input$commodities, subset = input$subset, year = input$year)
+      areaPlot(df = joined, country = input$countries, commodity = input$commodities, subset = input$subset, year = input$year)
     }
   ) |> bindCache(input$commodities, input$countries, input$year, input$subset)
   
   
   output$source = renderText({ input$dataSource })
     
-  output$text = renderPrint({
-    
-    values = limiter(joined, areaLimit = 7, itemLimit = 7, fillPos = "bottom")
-    
-    areaToUse = values[[1]]
-    showFill = values[[2]]
-
-    years <- as.numeric(na_omit(str_extract(names(joined), "1.*|2.*")))
-    
-    my_df = pivoted_data(mapData(data = joined, 
-                                 years = str_c("Y",years[years <= as.numeric(str_replace(input$year, "Y", ""))]),
-                                 .subset = input$subset,
-                                 countries = input$countries, 
-                                 commodities = input$commodities)) |>
-      sbt(Area %in% joined$Area & Item %in% joined$Item) |>
-      gby(eval(areaToUse), Year) |>
-      smr(value = fsum(value)) |> 
-      fungroup()
-    
-    valueChoice <- function(df, choice){
-      value = df|> gby(areaToUse) |> 
-        mtt(value = eval(call(choice, value)))
-      
-      return(value)
-    }
-    
-    base <-ggplot(my_df, aes(x=Year, fill = areaToUse))
-    
-    
-    
-    interactive <- base + 
-      geom_area_interactive(aes(y = value), alpha=0.6 , size=.5, colour="white", tooltip = "hey")
-    
-    interactive
-    
-  })
+  # output$text = renderPrint({
+  #   
+  #   sbt(joined, commodities %in% funique(markers()$Item) & Element == input$subset)$Area |> funique()
+  # 
+  # 
+  # })
   
   
   
@@ -288,10 +244,10 @@ server <- function(input, output, session) {
 shinyApp(ui, server)
 
 
-
-CO2 |>
-  group_by(Plant) |>
-  e_charts(conc) |>
-  e_area(uptake) |>
-  e_tooltip(trigger = "axis")
-
+# CO2 |>
+#   group_by(Plant) |>
+#   e_charts(conc) |>
+#   e_area(uptake) |>
+#   e_tooltip(trigger = "axis")
+# 
+# CO2
