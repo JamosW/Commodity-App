@@ -11,12 +11,12 @@ library(echarts4r)
 source("agri_data.R")
 source("leaflet_logic.R")
 
-#joined data read in from agri_data file
-countries <- funique(joined$Area)
+#agri_data data read in from agri_data file
+countries <- funique(agri_data$Area)
 
-subset <- funique(joined$Element)
+subset <- funique(agri_data$Element)
 
-commodities <- funique(sbt(joined, Element == "Area harvested")$Item)
+commodities <- funique(sbt(agri_data, Element == "Production")$Item)
 
 body <- shinydashboard::dashboardBody(
   
@@ -72,7 +72,7 @@ body <- shinydashboard::dashboardBody(
                         inputId = "subset",
                         label = "Element subset:", 
                         choices = subset,
-                        selected = "Area harvested",
+                        selected = "Production",
                         status = "warning"
                       ))
              
@@ -86,14 +86,14 @@ body <- shinydashboard::dashboardBody(
                          animate = TRUE,
                          sep = "",
                          width = "410px"),
-             verbatimTextOutput(outputId = "text")
+             # verbatimTextOutput(outputId = "text")
              )
 
     )),
   br(), br(), br(), br(),br(),br(),br(), br(), br(),br(),br(),br(),
   fluidRow(
     column(5, offset = 0.99,
-    # textInput("dataSource", label = NULL, "Data Source: Food and Agricultural Organization", width = "350px")
+    textInput("dataSource", label = NULL, "Data Source: Food and Agricultural Organization", width = "350px")
     )
   ))
 
@@ -111,7 +111,7 @@ server <- function(input, output, session) {
   
   markers <- reactive(
 
-    mapData(data = joined, 
+    mapData(data = agri_data, 
             countries = input$countries, 
             commodities = input$commodities, 
             years  = paste0("Y",input$year),
@@ -145,50 +145,35 @@ server <- function(input, output, session) {
     }
     
   }) |> bindCache(input$commodities, input$countries, input$year, input$subset)
+  
+  
 
   #observe input$commodities is not null, update input when value selected
   observe({
     
-    year = input$year
-    
-    available_areas <- funique(markers()$Area)
-    available_items <- funique(markers()$Item)
-    
-    selected_areas <- sbt(joined, Item %in% available_items & Element == input$subset)$Area |> sort() |> funique()
-    selected_items <- sbt(joined, Area %in% available_areas & Element == input$subset)$Item |> sort() |> funique()
-    
-    
+    selected_areas <- sbt(agri_data, Item %in% funique(markers()$Item) & Element == input$subset)$Area |> sort() |> funique()
 
+    area_choice <- if(!is.null(input$commodities)) selected_areas else countries
     
-    if(!is.null(input$commodities)) {
-      updateMultiInput(session = session, 
+    updateMultiInput(session = session, 
                        inputId = "countries", 
-                       choices = selected_areas,
+                       choices = sort(area_choice),
                        selected = input$countries)
-      print(available_items)
-      
-    } else {
-      updateMultiInput(session = session, 
-                       inputId = "countries",
-                       choices = countries,
-                       selected = input$countries)
-      
-    }
-    
-    
-    if(!is.null(input$countries)) {
-      updateMultiInput(session = session, 
-                       inputId = "commodities", 
-                       choices = selected_items,
-                       selected = input$commodities)
-    } else {
-      updateMultiInput(session = session, 
-                       inputId = "commodities", 
-                       choices = commodities,
-                       selected = input$commodities)
-      
-    }
 
+  }) |> 
+    bindEvent(input$commodities, input$countries, input$year, input$subset)
+  
+  observe({
+    
+    selected_items <- sbt(agri_data, Area %in% funique(markers()$Area) & Element == input$subset)$Item |> sort() |> funique()
+    
+    item_choice <- if(!is.null(input$countries)) selected_items else  commodities
+    
+    updateMultiInput(session = session, 
+                     inputId = "commodities", 
+                     choices = sort(item_choice),
+                     selected = input$commodities)
+    
   }) |> 
     bindEvent(input$commodities, input$countries, input$year, input$subset)
   
@@ -222,7 +207,7 @@ server <- function(input, output, session) {
     
     #Only draw if areachart tab is in focus
     if(input$display == "Interactive area Chart") {
-      areaPlot(df = joined, country = input$countries, commodity = input$commodities, subset = input$subset, year = input$year)
+      areaPlot(df = agri_data, country = input$countries, commodity = input$commodities, subset = input$subset, year = input$year)
     }
   ) |> bindCache(input$commodities, input$countries, input$year, input$subset)
   
@@ -230,24 +215,17 @@ server <- function(input, output, session) {
   output$source = renderText({ input$dataSource })
     
   # output$text = renderPrint({
-  #   
-  #   sbt(joined, commodities %in% funique(markers()$Item) & Element == input$subset)$Area |> funique()
+  # 
+  #   markers() |> head()
   # 
   # 
   # })
-  
-  
   
 }
 
 
 shinyApp(ui, server)
 
-
-# CO2 |>
-#   group_by(Plant) |>
-#   e_charts(conc) |>
-#   e_area(uptake) |>
-#   e_tooltip(trigger = "axis")
-# 
-# CO2
+#fix china issue
+#fix Niger issue
+#fix taiwan issue

@@ -1,12 +1,11 @@
 library(data.table)
-library(arrow)
 library(dplyr)
 
-joined <- fread("cleanedFrame.csv") |> qTBL()
+agri_data <- fread("cleanedFrame2.csv")
 
 mapData <- function(data, countries = NULL, commodities = NULL, years, .subset){
   
-  cols <- c("Area", "Item", "Element", "X", "Y", "economy", years)
+  cols <- c("Area", "Item", "Element", "LON", "LAT", "economy", years)
   
   data <- data |> ss(, colnames(data) %in% cols)
   
@@ -173,9 +172,6 @@ barPlot <- function(data) {
 
 
 #---------------------------------------Interactive Area-Chart-------------------------------------------------
-library(viridis)
-library(ggiraph)
-
 areaPlot <- function(df, subset, commodity, country, year){
   
   pivoted_df <- pivoted_data(mapData(data = df,

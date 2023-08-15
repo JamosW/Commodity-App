@@ -4,7 +4,7 @@ leaf_extra <- function(m, tit, dat, val, pall) {
   #function for map, to reduce repitition
   newM <- m |> addCircleMarkers(dat,
                                 radius = 6,
-                                lng = ~ X, lat = ~ Y,
+                                lng = ~ LON, lat = ~ LAT,
                                 label = ~ htmlEscape(paste(Area, eval(val))),
                                 color = ~ pall(eval(val)),
                                 stroke = FALSE, 
