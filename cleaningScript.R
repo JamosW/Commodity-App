@@ -6,13 +6,17 @@ library(ggplot2)
 #join XY data to data frame that is used for mapping
 agri_data <- data.table::fread("new_agri_data.csv")
 world_shape <- read_sf("world_shapefile") |> st_drop_geometry()
+economy_sf <- rnaturalearthdata::countries50 |> st_as_sf() |> st_drop_geometry()
+
+#grab the economy data from economy_sf
+world_shape <- left_join(world_shape, economy_sf[c("iso_a3", "economy")], by = c( "ISO3" = "iso_a3"))
 
 #convert to integer for easy binding of the similarities of the data with world_shape
 agri_data$`Area Code (M49)` <- as.integer(sub("'", "", agri_data$`Area Code (M49)`))
 
 #get rid of area's that don't have lat or are not actually countries
 agri_data <- agri_data |> 
-  left_join(world_shape[, c("UN", "LON", "LAT")], by = c("Area Code (M49)" = "UN")) |>
+  left_join(world_shape[, c("UN", "LON", "LAT", "economy")], by = c("Area Code (M49)" = "UN")) |>
   sbt(!is.na(LAT) & Element %in% c("Area harvested","Yield","Production"))
   
 

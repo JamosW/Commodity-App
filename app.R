@@ -16,7 +16,7 @@ countries <- funique(agri_data$Area)
 
 subset <- funique(agri_data$Element)
 
-commodities <- funique(sbt(agri_data, Element == "Production")$Item)
+commodities <- funique(sbt(agri_data, Element == "Area harvested")$Item)
 
 body <- shinydashboard::dashboardBody(
   
@@ -81,8 +81,8 @@ body <- shinydashboard::dashboardBody(
              sliderInput("year",
                          label = "Year",
                          min = 1961,
-                         max = 2020,
-                         value = 2020,
+                         max = 2021,
+                         value = 2021,
                          animate = TRUE,
                          sep = "",
                          width = "410px"),
