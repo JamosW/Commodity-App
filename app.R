@@ -108,6 +108,8 @@ ui <- dashboardPage(
 
 server <- function(input, output, session) {
   
+  inputs <- reactive(list(comm = input$commodities, countries = input$countries, 
+                           year = input$year, subset = input$subset))
   
   markers <- reactive(
 
@@ -137,14 +139,14 @@ server <- function(input, output, session) {
       if(length(funique(markers()$Item)) == 1) {
         m |> leaf_extra(tit = paste(funique(markers()$Item), "(ha)"), dat = markers(), val = values, pall = pal)
       } else {
-        m |> leaf_extra(tit = "Area Harvested (ha)", dat = markers(), val = values, pall = pal)
+        m |> leaf_extra(tit = input$subset, dat = markers(), val = values, pall = pal)
       }
       
     } else { m }
 
     }
     
-  }) |> bindCache(input$commodities, input$countries, input$year, input$subset)
+  }) |> bindCache(inputs())
   
   
 
@@ -161,7 +163,7 @@ server <- function(input, output, session) {
                        selected = input$countries)
 
   }) |> 
-    bindEvent(input$commodities, input$countries, input$year, input$subset)
+    bindEvent(inputs())
   
   observe({
     
@@ -175,7 +177,7 @@ server <- function(input, output, session) {
                      selected = input$commodities)
     
   }) |> 
-    bindEvent(input$commodities, input$countries, input$year, input$subset)
+    bindEvent(inputs())
   
 
   output$history <- renderPlot(
@@ -184,7 +186,7 @@ server <- function(input, output, session) {
     if(input$display == "History") {
     linePlot(markers(), .subset = input$subset, year = input$year, country = input$countries, commodity = input$commodities)
     }
-  ) |> bindCache(input$commodities, input$countries, input$year, input$subset)
+  ) |> bindCache(inputs())
   
   output$treemap <- renderPlot(
     
@@ -193,7 +195,7 @@ server <- function(input, output, session) {
       
       treemp(markers(), year = input$year, .subset = input$subset)
     }
-  ) |> bindCache(input$commodities, input$countries, input$year, input$subset)
+  ) |> bindCache(inputs())
   
   output$bargraph <- renderPlot(
 
@@ -201,7 +203,7 @@ server <- function(input, output, session) {
     if(input$display == "Percentages") {
       barPlot(markers())
     }
-  ) |> bindCache(input$commodities, input$countries, input$year, input$subset)
+  ) |> bindCache(inputs())
   
   output$areachart <- renderEcharts4r(
     
@@ -209,14 +211,14 @@ server <- function(input, output, session) {
     if(input$display == "Interactive area Chart") {
       areaPlot(df = agri_data, country = input$countries, commodity = input$commodities, subset = input$subset, year = input$year)
     }
-  ) |> bindCache(input$commodities, input$countries, input$year, input$subset)
+  ) |> bindCache(inputs())
   
   
   output$source = renderText({ input$dataSource })
     
   # output$text = renderPrint({
   # 
-  #   markers() |> head()
+  #   input$subset
   # 
   # 
   # })
@@ -226,6 +228,3 @@ server <- function(input, output, session) {
 
 shinyApp(ui, server)
 
-#fix china issue
-#fix Niger issue
-#fix taiwan issue

@@ -1,7 +1,5 @@
-library(data.table)
-library(dplyr)
 
-agri_data <- fread("cleanedFrame2.csv")
+agri_data <- data.table::fread("cleanedFrame2.csv")
 
 mapData <- function(data, countries = NULL, commodities = NULL, years, .subset){
   
@@ -79,9 +77,9 @@ linePlot <- function(data, .subset, year, country, commodity) {
     return(plot)
   }
   
-  years <- as.numeric(na_omit(str_extract(names(joined), "1.*|2.*")))
+  years <- as.numeric(na_omit(str_extract(names(agri_data), "1.*|2.*")))
   
-  subset <- pivoted_data(mapData(joined, countries = country,
+  subset <- pivoted_data(mapData(agri_data, countries = country,
                                  commodities = commodity, 
                                  years = str_c("Y",years[years <= as.numeric(str_replace(year, "Y", ""))]),
                                  .subset = .subset))
@@ -205,4 +203,8 @@ areaPlot <- function(df, subset, commodity, country, year){
  
 #-------------------------------------------------------------------------------------------------------
 
-
+#simplified between
+between <- function (x, left, right) 
+{
+  x >= left & x <= right
+}
