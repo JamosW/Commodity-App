@@ -2,7 +2,6 @@
 
 This is an dashboard to visualize data from the Food and Agricultural Organization (FAO) that is readily available which can be found [here.](https://www.fao.org/faostat/en/#data/QCL)
 
-As the app currently stands, it is a lightweight app with the purpose of visualizing FAO data and presenting some time-series data on the
-public and free data on traded agricultural commodities.
+The purpose of this dashboard is to be a lightweight, with the purpose of visualizing FAO data on public and freely traded agricultural commodities.
 
 [Commodity App](https://jamesapps.shinyapps.io/Commodities/)
